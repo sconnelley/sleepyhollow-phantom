@@ -5,16 +5,48 @@ var stderr = require('system').stderr;
 var stdin = require('system').stdin;
 
 (function(window) {
-    "use strict";
+    // setting off some issues, I don't care to figure out
+    //"use strict";
 
     function sleepyhollow() {
 
         // the modified event-emitter bridge
         var sleepyhollow = new EventEmitter();
-        _emit = sleepyhollow.emit;
+
+        // add `var`
+        var _emit = sleepyhollow.emit;
 
         // each message will get it's own ID
         var msgId = 0;
+
+        // couldn't overwrite `read-only` property
+        // again don't care to figure it out
+        sleepyhollow.emitt = function(event, message) {
+            if (!message) message = " ";
+            msgId++;
+
+            // local emit, for other subscribers
+            _emit.apply(sleepyhollow, Array.prototype.slice.call(arguments, 0));
+
+            // if this event is an ack, bolt
+            if (event == "ack") return;
+
+            // experiments show that 4096 is the only safe MTU
+            // stringify and chunk out writes
+            JSON.stringify(message)
+                .match(/.{1,4096}/g)
+                .forEach(function(message, index, arr) {
+                    write({
+                        msgId: msgId,
+                        // if there is more than one index, it's multipart
+                        isMultipart: arr.length > 1,
+                        // EOF there are no more indicies left to pass
+                        isEOF: (index == arr.length - 1),
+                        event: event,
+                        message: message
+                    });
+                });
+        }
 
         sleepyhollow.emit = function(event, message) {
             if (!message) message = " ";
@@ -42,6 +74,8 @@ var stdin = require('system').stdin;
                     });
                 });
         }
+
+
 
         // custom write <> read bridge
         function write(obj) {
